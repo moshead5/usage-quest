@@ -126,15 +126,19 @@ namespace UsageQuest
                 var psi = new ProcessStartInfo(agyPath, "-p /usage --output-format json")
                 {
                     UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
-                    CreateNoWindow = true,
                     StandardOutputEncoding = Encoding.UTF8,
+                    WorkingDirectory = Path.GetTempPath(),
                 };
                 string stdout;
                 int exitCode;
                 using (var proc = Process.Start(psi))
                 {
+                    try { proc.StandardInput.Close(); } catch { }
                     stdout = proc.StandardOutput.ReadToEnd();
                     proc.WaitForExit(timeoutMs);
                     exitCode = proc.ExitCode;

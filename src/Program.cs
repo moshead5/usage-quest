@@ -8,8 +8,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Usage Quest")]
 [assembly: AssemblyProduct("Usage Quest")]
 [assembly: AssemblyDescription("Claude Code /usage 사용량을 게임 화면처럼 보여주는 위젯")]
-[assembly: AssemblyVersion("2.5.1.0")]
-[assembly: AssemblyFileVersion("2.5.1.0")]
+[assembly: AssemblyVersion("2.5.2.0")]
+[assembly: AssemblyFileVersion("2.5.2.0")]
 
 namespace UsageQuest
 {
