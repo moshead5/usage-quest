@@ -396,8 +396,9 @@ namespace UsageQuest
             y += S(12 + 8);
             if (!ag.Ok)
             {
-                string msg = ag.Code == "NOT_RUNNING" ? "Antigravity가 꺼져 있음 — 켜면 표시됩니다" : "Antigravity 확인 실패: " + ag.Message;
-                Px.Text(g, Clip(g, msg, Px.F("g9", S(10)), x1 - x0), Px.F("g9", S(10)), Px.InkFaint, x0, y);
+                string msg = ag.Code == "NOT_RUNNING" ? "Antigravity가 꺼져 있음 — 켜면 표시됩니다" : "확인 실패: " + ag.Message;
+                Px.Text(g, Clip(g, msg, Px.F("g9", S(10)), x1 - x0), Px.F("g9", S(10)), ag.Code == "NOT_RUNNING" ? Px.InkFaint : Px.Warn, x0, y);
+                AddHit(new RectangleF(x0, y, x1 - x0, S(14)), null, msg + "\n(트레이 메뉴 → Antigravity 진단 정보 복사)", false);
                 return;
             }
             var chipF = Px.F("ps", S(7));

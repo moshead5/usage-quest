@@ -22,8 +22,8 @@ namespace UsageQuest
         public UsageResult Last;        // 마지막 성공
         public AgResult Ag;             // Antigravity 사용량 (없으면 null)
         public bool AgEnabled { get { return Settings.GetBool("showAg", true); } }
-        // 한 번이라도 Antigravity를 찾았거나 켜져 있을 때만 위젯에 Antigravity 칸을 보여준다
-        public bool AgVisible { get { return AgEnabled && Ag != null && (Ag.Ok || Settings.GetBool("agSeen", false)); } }
+        // 켜져 있으면 항상 표시 (Antigravity가 꺼져 있거나 실패하면 그 이유를 한 줄로 보여줌)
+        public bool AgVisible { get { return AgEnabled && Ag != null; } }
         public UsageResult Error;       // 현재 오류 (없으면 null)
         public UsageResult Shown { get { return Error != null && Last == null ? Error : (Last ?? Error); } }
         public Mood Mood;
@@ -368,6 +368,8 @@ namespace UsageQuest
             menu.Items.Add(new ToolStripMenuItem("위젯 위치 초기화 (오른쪽 위)", null, (a, b) => { widget.ResetPosition(); ShowWidget(); }));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Antigravity 사용량 표시", null, (a, b) => { Settings.SetBool("showAg", !AgEnabled); if (!AgEnabled) Ag = null; Changed(); if (AgEnabled) { lastManual = DateTime.MinValue; Refresh(false); } }) { Checked = AgEnabled });
+            if (AgEnabled)
+                menu.Items.Add(new ToolStripMenuItem("   ↳ Antigravity 진단 정보 복사", null, (a, b) => { try { Clipboard.SetText(AntigravityClient.LastDiag); Balloon("복사됨", "Antigravity 진단 정보를 클립보드에 복사했습니다. 대화창에 붙여넣어 주세요."); } catch { } }));
             menu.Items.Add(new ToolStripMenuItem("작업표시줄에 사용량 표시", null, (a, b) => SetStripEnabled(!StripEnabled)) { Checked = StripEnabled });
             if (StripEnabled && Native.IsWindows)
             {

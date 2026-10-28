@@ -25,13 +25,13 @@ Claude Code의 `/usage` 값(5시간 세션 · 주간 한도 · 리셋 시각)을
   - 트레이 메뉴 "업데이트 확인"으로 수동 확인, "시작할 때 업데이트 확인"으로 시작 시 확인 끄기
 - **Antigravity 사용량**: Google Antigravity가 켜져 있으면 모델 그룹별(Gemini / Claude·GPT) 5시간·주간 남은 양을 위젯 아래 칸에 표시
   - Antigravity가 PC 안에서 띄우는 언어 서버(127.0.0.1)에 Antigravity 화면과 같은 요청을 보내 읽음. Google 로그인 정보는 쓰지 않음
-  - Antigravity가 꺼져 있으면 "꺼져 있음"으로 표시, 한 번도 찾은 적 없으면 칸 자체를 숨김. 트레이 메뉴 "Antigravity 사용량 표시"로 끄기
+  - Antigravity가 꺼져 있으면 "꺼져 있음"으로 표시, 트레이 메뉴 "Antigravity 사용량 표시"로 끄기
   - 비공식 방식이라 Antigravity 업데이트로 바뀔 수 있음
 - 단축키: `R`/`F5` 다시 확인, `Esc` 숨기기
 - 첫 실행 시 "컴퓨터 시작 시 자동 실행" 켜짐 (트레이 메뉴에서 끄기)
 
 ## 설치
-`UsageQuest-Setup-2.3.0.exe` 실행. 관리자 권한 필요 없음.
+`UsageQuest-Setup-2.3.1.exe` 실행. 관리자 권한 필요 없음.
 - 1.x(Electron) 버전이 깔려 있으면 설치 중에 자동으로 지우고 자동 실행 항목도 정리함
 - 서명이 없어서 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**
 - 설치 위치: `%LOCALAPPDATA%\Programs\UsageQuest`, 설정: `%APPDATA%\UsageQuest\settings.json`

@@ -34,75 +34,93 @@ namespace UsageQuest
         static int cachedPid;
 
         // ---------- 언어 서버 찾기 ----------
-        class Proc { public int Pid; public string Token; }
+        class Proc { public int Pid; public string Token; public int ExtPort; public string Name; }
+
+        // 마지막 확인 과정 기록 (트레이 메뉴 "Antigravity 진단 정보 복사")
+        public static string LastDiag = "아직 확인 전";
+        static System.Text.StringBuilder diag;
+        static void D(string line) { if (diag != null) diag.AppendLine(line); }
 
         static List<Proc> FindProcesses()
         {
             var list = new List<Proc>();
             if (!Native.IsWindows) return list;
+            int total = 0, langServers = 0;
             try
             {
+                // 이름이 바뀌어도 찾을 수 있게 --csrf_token 을 가진 프로세스를 모두 조회
                 using (var q = new System.Management.ManagementObjectSearcher(
-                    "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name LIKE 'language_server_windows%'"))
+                    "SELECT ProcessId, Name, CommandLine FROM Win32_Process WHERE CommandLine LIKE '%csrf_token%'"))
                 using (var rows = q.Get())
                 {
                     foreach (System.Management.ManagementObject row in rows)
                     {
+                        total++;
                         string cmd = Convert.ToString(row["CommandLine"]) ?? "";
+                        string name = Convert.ToString(row["Name"]) ?? "";
                         int pid = Convert.ToInt32(row["ProcessId"]);
                         row.Dispose();
-                        if (!IsAntigravity(cmd)) continue;
-                        var m = Regex.Match(cmd, @"--csrf_token[=\s]+([a-zA-Z0-9\-]+)");
-                        if (!m.Success) continue;
-                        list.Add(new Proc { Pid = pid, Token = m.Groups[1].Value });
+                        if (name.IndexOf("language_server", StringComparison.OrdinalIgnoreCase) >= 0) langServers++;
+                        bool ag = IsAntigravity(cmd);
+                        D("프로세스 " + name + " (PID " + pid + ") Antigravity=" + ag);
+                        if (!ag) continue;
+                        var m = Regex.Match(cmd, @"--csrf_token[=\s]+""?([a-zA-Z0-9\-]+)");
+                        if (!m.Success) { D("  csrf_token 못 찾음"); continue; }
+                        var ep = Regex.Match(cmd, @"--extension_server_port[=\s]+""?(\d+)");
+                        list.Add(new Proc { Pid = pid, Token = m.Groups[1].Value, ExtPort = ep.Success ? int.Parse(ep.Groups[1].Value) : 0, Name = name });
                     }
                 }
             }
-            catch { }
+            catch (Exception e) { D("프로세스 조회 실패: " + e.Message); }
+            D("csrf_token 프로세스 " + total + "개, language_server " + langServers + "개, Antigravity " + list.Count + "개");
             return list;
         }
 
         static bool IsAntigravity(string cmd)
         {
             if (Regex.IsMatch(cmd, @"--app_data_dir[=\s]+""?antigravity\b", RegexOptions.IgnoreCase)) return true;
-            return cmd.IndexOf("\\antigravity\\", StringComparison.OrdinalIgnoreCase) >= 0;
+            return cmd.IndexOf("antigravity", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         // ---------- 그 프로세스가 열어둔 포트 (명령 실행 없이 Windows API로) ----------
         [DllImport("iphlpapi.dll", SetLastError = true)]
         static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool sort, int af, int tableClass, uint reserved);
 
-        static List<int> ListeningPorts(int pid)
+        // (포트, IPv6 여부)
+        static List<KeyValuePair<int, bool>> ListeningPorts(int pid)
         {
-            var ports = new List<int>();
+            var ports = new List<KeyValuePair<int, bool>>();
             if (!Native.IsWindows) return ports;
-            const int AF_INET = 2, TCP_TABLE_OWNER_PID_LISTENER = 3;
-            int size = 0;
-            GetExtendedTcpTable(IntPtr.Zero, ref size, false, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
-            if (size <= 0) return ports;
-            IntPtr buf = Marshal.AllocHGlobal(size);
-            try
+            const int TCP_TABLE_OWNER_PID_LISTENER = 3;
+            foreach (var af in new[] { 2, 23 }) // AF_INET, AF_INET6
             {
-                if (GetExtendedTcpTable(buf, ref size, false, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0) != 0) return ports;
-                int n = Marshal.ReadInt32(buf);
-                for (int i = 0; i < n; i++)
+                int rowSize = af == 2 ? 24 : 56, portOff = af == 2 ? 8 : 20, pidOff = af == 2 ? 20 : 52;
+                int size = 0;
+                GetExtendedTcpTable(IntPtr.Zero, ref size, false, af, TCP_TABLE_OWNER_PID_LISTENER, 0);
+                if (size <= 0) continue;
+                IntPtr buf = Marshal.AllocHGlobal(size);
+                try
                 {
-                    IntPtr row = IntPtr.Add(buf, 4 + i * 24);
-                    int rowPid = Marshal.ReadInt32(row, 20);
-                    if (rowPid != pid) continue;
-                    int raw = Marshal.ReadInt32(row, 8);
-                    int port = ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF);
-                    if (port > 0 && !ports.Contains(port)) ports.Add(port);
+                    if (GetExtendedTcpTable(buf, ref size, false, af, TCP_TABLE_OWNER_PID_LISTENER, 0) != 0) continue;
+                    int n = Marshal.ReadInt32(buf);
+                    for (int i = 0; i < n; i++)
+                    {
+                        IntPtr row = IntPtr.Add(buf, 4 + i * rowSize);
+                        if (Marshal.ReadInt32(row, pidOff) != pid) continue;
+                        int raw = Marshal.ReadInt32(row, portOff);
+                        int port = ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF);
+                        if (port > 0) ports.Add(new KeyValuePair<int, bool>(port, af == 23));
+                    }
                 }
+                finally { Marshal.FreeHGlobal(buf); }
             }
-            finally { Marshal.FreeHGlobal(buf); }
             return ports;
         }
 
         // ---------- 요청 ----------
-        static Dictionary<string, object> Post(int port, string token, string method, bool https, int timeoutMs)
+        static Dictionary<string, object> Post(int port, string token, string method, bool https, int timeoutMs, bool v6 = false)
         {
-            var url = (https ? "https" : "http") + "://127.0.0.1:" + port + Svc + method;
+            var url = (https ? "https" : "http") + "://" + (v6 ? "[::1]" : "127.0.0.1") + ":" + port + Svc + method;
             var req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "POST";
             req.ContentType = "application/json";
@@ -121,58 +139,81 @@ namespace UsageQuest
                 return Json.ParseObject(r.ReadToEnd());
         }
 
-        static bool TryConnect(Proc p, out int port, out bool https)
+        static bool TryConnect(Proc p, out int port, out bool https, out bool v6)
         {
-            port = 0; https = true;
-            foreach (var pt in ListeningPorts(p.Pid))
+            port = 0; https = true; v6 = false;
+            var cands = ListeningPorts(p.Pid);
+            if (p.ExtPort > 0 && !cands.Exists(c => c.Key == p.ExtPort)) cands.Add(new KeyValuePair<int, bool>(p.ExtPort, false));
+            D("PID " + p.Pid + " 포트: " + string.Join(", ", cands.Select(c => c.Key + (c.Value ? "(v6)" : "")).ToArray()));
+            foreach (var c in cands)
             {
                 foreach (var h in new[] { true, false })
                 {
                     try
                     {
-                        var j = Post(pt, p.Token, "GetUserStatus", h, 2500);
-                        if (j != null && Json.Obj(j, "userStatus") != null) { port = pt; https = h; return true; }
+                        var j = Post(c.Key, p.Token, "GetUserStatus", h, 2500, c.Value);
+                        if (j != null && Json.Obj(j, "userStatus") != null) { port = c.Key; https = h; v6 = c.Value; D("  " + c.Key + (h ? " https" : " http") + " 성공"); return true; }
+                        D("  " + c.Key + (h ? " https" : " http") + " 응답에 userStatus 없음");
                     }
-                    catch { }
+                    catch (WebException e)
+                    {
+                        var hr = e.Response as HttpWebResponse;
+                        D("  " + c.Key + (h ? " https" : " http") + " 실패: " + (hr != null ? "HTTP " + (int)hr.StatusCode : e.Status.ToString()));
+                    }
+                    catch (Exception e) { D("  " + c.Key + (h ? " https" : " http") + " 실패: " + e.Message); }
                 }
             }
             return false;
         }
 
-        static bool cachedHttps = true;
+        static bool cachedHttps = true, cachedV6;
 
         public static AgResult Fetch()
         {
             if (!Native.IsWindows) return new AgResult { Ok = false, Code = "NOT_RUNNING", Message = "Windows에서만 지원" };
+            diag = new System.Text.StringBuilder();
+            D(DateTime.Now.ToString("s") + " Usage Quest " + Updater.Short(Updater.Current));
             try
             {
                 Dictionary<string, object> status = null;
                 if (cachedPort > 0)
                 {
-                    try { status = Post(cachedPort, cachedToken, "GetUserStatus", cachedHttps, 4000); } catch { status = null; }
+                    try { status = Post(cachedPort, cachedToken, "GetUserStatus", cachedHttps, 4000, cachedV6); D("저장된 포트 " + cachedPort + " 사용"); }
+                    catch (Exception e) { status = null; D("저장된 포트 " + cachedPort + " 실패: " + e.Message); }
                 }
                 if (status == null || Json.Obj(status, "userStatus") == null)
                 {
                     cachedPort = 0;
                     var procs = FindProcesses();
-                    if (procs.Count == 0) return new AgResult { Ok = false, Code = "NOT_RUNNING", Message = "Antigravity가 꺼져 있음" };
+                    if (procs.Count == 0) return Done(new AgResult { Ok = false, Code = "NOT_RUNNING", Message = "Antigravity가 꺼져 있음 (언어 서버를 못 찾음)" });
                     foreach (var p in procs)
                     {
-                        int port; bool h;
-                        if (TryConnect(p, out port, out h)) { cachedPort = port; cachedToken = p.Token; cachedPid = p.Pid; cachedHttps = h; break; }
+                        int port; bool h, v6;
+                        if (TryConnect(p, out port, out h, out v6)) { cachedPort = port; cachedToken = p.Token; cachedPid = p.Pid; cachedHttps = h; cachedV6 = v6; break; }
                     }
-                    if (cachedPort == 0) return new AgResult { Ok = false, Code = "ERROR", Message = "Antigravity 언어 서버에 연결하지 못함" };
-                    status = Post(cachedPort, cachedToken, "GetUserStatus", cachedHttps, 4000);
+                    if (cachedPort == 0) return Done(new AgResult { Ok = false, Code = "ERROR", Message = "언어 서버에 연결하지 못함" });
+                    status = Post(cachedPort, cachedToken, "GetUserStatus", cachedHttps, 4000, cachedV6);
                 }
                 Dictionary<string, object> summary = null;
-                try { summary = Post(cachedPort, cachedToken, "RetrieveUserQuotaSummary", cachedHttps, 4000); } catch { }
-                return Parse(status, summary);
+                try { summary = Post(cachedPort, cachedToken, "RetrieveUserQuotaSummary", cachedHttps, 4000, cachedV6); D("RetrieveUserQuotaSummary 성공"); }
+                catch (Exception e) { D("RetrieveUserQuotaSummary 실패: " + e.Message); }
+                var r = Parse(status, summary);
+                D("표시 항목 " + r.Meters.Count + "개");
+                if (r.Meters.Count == 0) { r.Ok = false; r.Code = "ERROR"; r.Message = "응답에 사용량 정보가 없음"; }
+                return Done(r);
             }
             catch (Exception e)
             {
                 cachedPort = 0;
-                return new AgResult { Ok = false, Code = "ERROR", Message = e.Message };
+                return Done(new AgResult { Ok = false, Code = "ERROR", Message = e.Message });
             }
+        }
+
+        static AgResult Done(AgResult r)
+        {
+            D("결과: " + (r.Ok ? "성공" : r.Code + " " + r.Message));
+            LastDiag = diag.ToString();
+            return r;
         }
 
         // ---------- 해석 ----------
