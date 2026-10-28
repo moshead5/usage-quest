@@ -154,13 +154,21 @@ namespace UsageQuest
             }
         }
 
-        // agy /usage JSON(groups/buckets 구조)에서 미터를 파싱합니다.
-        // Python의 parse_antigravity_quota()에 대응합니다.
+        // agy -p /usage --output-format json 응답에서 미터를 파싱합니다.
+        // 실제 응답 구조: { "command": { "data": { "groups": [ { "name": "...", "buckets": [ { "window": "5h"|"weekly", "remaining_fraction": 0.0~1.0, "reset_time": "..." } ] } ] } } }
         static AgResult ParseFromCliJson(Dictionary<string, object> data)
         {
             var r = new AgResult { Ok = true, Source = "cli", FetchedAt = DateTime.UtcNow };
+
+            // command.data.groups 경로로 진입
+            var command = Json.Obj(data, "command");
+            var cmdData = Json.Obj(command, "data");
+
             object groupsObj;
-            data.TryGetValue("groups", out groupsObj);
+            // command.data.groups 우선, 없으면 최상위 groups 폴백
+            if (cmdData != null && cmdData.TryGetValue("groups", out groupsObj)) { }
+            else data.TryGetValue("groups", out groupsObj);
+
             var groupsList = groupsObj as System.Collections.IEnumerable;
             if (groupsList == null)
                 return new AgResult { Ok = false, Code = "ERROR", Message = "agy /usage 응답에 groups 없음" };
@@ -169,7 +177,8 @@ namespace UsageQuest
             {
                 var g = gRaw as Dictionary<string, object>;
                 if (g == null) continue;
-                string groupName = Json.Str(g, "displayName") ?? "Unknown";
+                // 실제 필드명: "name" (displayName 아님)
+                string groupName = Json.Str(g, "name") ?? Json.Str(g, "displayName") ?? "Unknown";
                 string chip = AntigravityClient.ChipFor(groupName);
 
                 object bucketsObj;
@@ -182,24 +191,14 @@ namespace UsageQuest
                     var b = bRaw as Dictionary<string, object>;
                     if (b == null) continue;
 
-                    // remainingFraction 은 remaining 오브젝트 안에 있을 수도, 직접 있을 수도 있다
-                    double? frac = null;
-                    var remaining = Json.Obj(b, "remaining");
-                    if (remaining != null)
-                        frac = Json.Num(remaining, "remainingFraction") ?? Json.Num(remaining, "remaining_fraction");
-                    if (!frac.HasValue)
-                        frac = Json.Num(b, "remainingFraction") ?? Json.Num(b, "remaining_fraction");
+                    // 실제 필드: remaining_fraction (직접 float, remaining 객체 없음)
+                    double? frac = Json.Num(b, "remaining_fraction") ?? Json.Num(b, "remainingFraction");
                     if (!frac.HasValue) continue;
 
-                    // bucketId 또는 displayName 으로 window 이름 결정
-                    string bucketId = Json.Str(b, "bucketId") ?? Json.Str(b, "displayName") ?? "";
-                    string win = WindowOf(bucketId);
-                    string resetDesc = Json.Str(b, "description") ?? "";
+                    // window 필드로 시간 창 결정 ("5h", "weekly" 등)
+                    string win = WindowOf(Json.Str(b, "window") ?? Json.Str(b, "id") ?? Json.Str(b, "name") ?? "");
 
-                    // reset 시각: description 에서 직접 파싱하지 않고, reset_time / resetTime 필드 우선
                     DateTime? reset = Json.Date(b, "reset_time") ?? Json.Date(b, "resetTime");
-                    double? inSec = Json.Num(b, "reset_in_seconds");
-                    if (!reset.HasValue && inSec.HasValue) reset = r.FetchedAt.AddSeconds(inSec.Value);
 
                     r.Meters.Add(new Meter
                     {
@@ -237,11 +236,14 @@ namespace UsageQuest
             // 2. 알려진 설치 경로 (Windows)
             if (Native.IsWindows)
             {
+                var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 var candidates = new[]
                 {
+                    Path.Combine(local, "agy", "bin", "agy.exe"),          // 실제 설치 경로 (agy 공식)
+                    Path.Combine(local, "agy", "agy.exe"),
                     Path.Combine(Home, ".gemini", "antigravity-cli", "agy.exe"),
                     Path.Combine(Home, ".gemini", "antigravity-cli", "agy.cmd"),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "antigravity-cli", "agy.exe"),
+                    Path.Combine(local, "Programs", "antigravity-cli", "agy.exe"),
                 };
                 foreach (var c in candidates)
                     try { if (File.Exists(c)) return c; } catch { }
