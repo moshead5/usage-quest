@@ -54,5 +54,6 @@ Claude Code의 `/usage` 값(5시간 세션 · 주간 한도 · 리셋 시각)을
 
 ## 새 버전 배포 (개발자용)
 1. `src/Program.cs`의 `AssemblyVersion`, `installer.nsi`의 `VERSION` 올리기
-2. `./build.sh && makensis installer.nsi`
-3. GitHub Releases에 태그 `vX.Y.Z`로 릴리스 생성, `out/UsageQuest-Setup-X.Y.Z.exe` 첨부, 설명에 `sha256: <해시>` 한 줄 추가 (`sha256sum` 결과)
+2. (선택) `notes/vX.Y.Z.md`에 바뀐 점 적기
+3. 커밋 후 태그 `vX.Y.Z`를 push → GitHub Actions가 설치파일을 빌드해 Releases에 올림 (SHA-256 자동 기록)
+4. 앱에서 "업데이트 확인" → 새 버전 설치
