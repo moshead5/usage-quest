@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -8,10 +9,11 @@ using System.Text.RegularExpressions;
 
 namespace UsageQuest
 {
-    // Antigravity CLI(agy) 연동 — 공식 상태줄(statusLine) 기능 사용
-    // agy가 상태가 바뀔 때마다 "UsageQuest.exe --agy-statusline" 을 실행하면서 남은 사용량(quota)을 JSON으로 넘겨준다.
-    // 그 값을 %APPDATA%\UsageQuest\agy-status.json 에 저장하고, 위젯은 그 파일을 읽는다.
-    // 로그인 정보는 전혀 쓰지 않는다 (agy가 직접 넘겨주는 값만 받음).
+    // Antigravity CLI(agy) 연동 — 두 가지 방식 지원
+    // [방식 1] 공식 statusLine: agy가 상태가 바뀔 때마다 "UsageQuest.exe --agy-statusline" 을 실행하면서 남은 사용량(quota)을 JSON으로 넘겨준다.
+    //          그 값을 %APPDATA%\UsageQuest\agy-status.json 에 저장하고, 위젯은 그 파일을 읽는다.
+    // [방식 2] 직접 호출(폴백): statusLine 저장값이 없으면 "agy -p /usage --output-format json" 을 직접 실행해 쿼타 JSON을 읽는다.
+    //          로그인 정보는 전혀 쓰지 않는다 (agy가 직접 넘겨주는 값만 받음).
     static class AgyCli
     {
         public static string StatusFile { get { return Path.Combine(Settings.Dir, "agy-status.json"); } }
@@ -110,17 +112,170 @@ namespace UsageQuest
             return r;
         }
 
-        // 저장된 CLI 값 읽기 (없으면 null)
-        public static AgResult ReadSaved()
+        // ---------- 방식 2: agy -p /usage --output-format json 직접 호출 ----------
+
+        // agy CLI를 비대화형으로 실행하여 쿼타 JSON 데이터를 조회합니다.
+        // agy 1.1.11+ 의 --output-format json 옵션을 사용합니다.
+        public static AgResult FetchFromCli(int timeoutMs = 15000)
         {
+            string agyPath = FindAgy();
+            if (agyPath == null)
+                return new AgResult { Ok = false, Code = "NOT_RUNNING", Message = "agy(Antigravity CLI)를 찾을 수 없음" };
             try
             {
-                if (!File.Exists(StatusFile)) return null;
-                var j = Json.ParseObject(File.ReadAllText(StatusFile, Encoding.UTF8));
-                if (j == null) return null;
-                return Parse(j, DateTime.UtcNow);
+                var psi = new ProcessStartInfo(agyPath, "-p /usage --output-format json")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                };
+                string stdout;
+                int exitCode;
+                using (var proc = Process.Start(psi))
+                {
+                    stdout = proc.StandardOutput.ReadToEnd();
+                    proc.WaitForExit(timeoutMs);
+                    exitCode = proc.ExitCode;
+                }
+                if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
+                    return new AgResult { Ok = false, Code = "ERROR", Message = "agy /usage 응답 없음 (exitCode=" + exitCode + ")" };
+
+                var data = Json.ParseObject(stdout);
+                if (data == null)
+                    return new AgResult { Ok = false, Code = "ERROR", Message = "agy /usage JSON 파싱 실패" };
+
+                return ParseFromCliJson(data);
             }
-            catch { return null; }
+            catch (Exception e)
+            {
+                return new AgResult { Ok = false, Code = "ERROR", Message = "agy 직접 호출 실패: " + e.Message };
+            }
+        }
+
+        // agy /usage JSON(groups/buckets 구조)에서 미터를 파싱합니다.
+        // Python의 parse_antigravity_quota()에 대응합니다.
+        static AgResult ParseFromCliJson(Dictionary<string, object> data)
+        {
+            var r = new AgResult { Ok = true, Source = "cli", FetchedAt = DateTime.UtcNow };
+            object groupsObj;
+            data.TryGetValue("groups", out groupsObj);
+            var groupsList = groupsObj as System.Collections.IEnumerable;
+            if (groupsList == null)
+                return new AgResult { Ok = false, Code = "ERROR", Message = "agy /usage 응답에 groups 없음" };
+
+            foreach (var gRaw in groupsList)
+            {
+                var g = gRaw as Dictionary<string, object>;
+                if (g == null) continue;
+                string groupName = Json.Str(g, "displayName") ?? "Unknown";
+                string chip = AntigravityClient.ChipFor(groupName);
+
+                object bucketsObj;
+                g.TryGetValue("buckets", out bucketsObj);
+                var bucketsList = bucketsObj as System.Collections.IEnumerable;
+                if (bucketsList == null) continue;
+
+                foreach (var bRaw in bucketsList)
+                {
+                    var b = bRaw as Dictionary<string, object>;
+                    if (b == null) continue;
+
+                    // remainingFraction 은 remaining 오브젝트 안에 있을 수도, 직접 있을 수도 있다
+                    double? frac = null;
+                    var remaining = Json.Obj(b, "remaining");
+                    if (remaining != null)
+                        frac = Json.Num(remaining, "remainingFraction") ?? Json.Num(remaining, "remaining_fraction");
+                    if (!frac.HasValue)
+                        frac = Json.Num(b, "remainingFraction") ?? Json.Num(b, "remaining_fraction");
+                    if (!frac.HasValue) continue;
+
+                    // bucketId 또는 displayName 으로 window 이름 결정
+                    string bucketId = Json.Str(b, "bucketId") ?? Json.Str(b, "displayName") ?? "";
+                    string win = WindowOf(bucketId);
+                    string resetDesc = Json.Str(b, "description") ?? "";
+
+                    // reset 시각: description 에서 직접 파싱하지 않고, reset_time / resetTime 필드 우선
+                    DateTime? reset = Json.Date(b, "reset_time") ?? Json.Date(b, "resetTime");
+                    double? inSec = Json.Num(b, "reset_in_seconds");
+                    if (!reset.HasValue && inSec.HasValue) reset = r.FetchedAt.AddSeconds(inSec.Value);
+
+                    r.Meters.Add(new Meter
+                    {
+                        Key = "ag:" + chip, Chip = chip,
+                        Title = groupName + " · " + win,
+                        Used = Math.Max(0, Math.Min(100, (1 - frac.Value) * 100)),
+                        ResetsAt = reset,
+                        Main = win == "5시간",
+                    });
+                }
+            }
+
+            r.Meters = r.Meters.OrderBy(m => m.Chip == "GEM" ? 0 : 1).ThenBy(m => m.Main ? 0 : 1).Take(4).ToList();
+            if (r.Meters.Count == 0) { r.Ok = false; r.Code = "ERROR"; r.Message = "agy /usage 사용량 정보가 비어 있음"; }
+            return r;
+        }
+
+        // PATH에서 agy 실행 파일 위치 찾기
+        static string FindAgy()
+        {
+            // 1. PATH 탐색
+            string[] exts = Native.IsWindows ? new[] { ".exe", ".cmd", "" } : new[] { "" };
+            foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+            {
+                foreach (var ext in exts)
+                {
+                    try
+                    {
+                        string full = Path.Combine(dir.Trim(), "agy" + ext);
+                        if (File.Exists(full)) return full;
+                    }
+                    catch { }
+                }
+            }
+            // 2. 알려진 설치 경로 (Windows)
+            if (Native.IsWindows)
+            {
+                var candidates = new[]
+                {
+                    Path.Combine(Home, ".gemini", "antigravity-cli", "agy.exe"),
+                    Path.Combine(Home, ".gemini", "antigravity-cli", "agy.cmd"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "antigravity-cli", "agy.exe"),
+                };
+                foreach (var c in candidates)
+                    try { if (File.Exists(c)) return c; } catch { }
+            }
+            return null;
+        }
+
+        // 저장된 CLI 값 읽기. 없으면 agy 직접 호출을 시도하고, 그것도 실패하면 null 반환
+        public static AgResult ReadSaved()
+        {
+            // [방식 1] statusLine 저장 파일
+            try
+            {
+                if (File.Exists(StatusFile))
+                {
+                    var j = Json.ParseObject(File.ReadAllText(StatusFile, Encoding.UTF8));
+                    if (j != null)
+                    {
+                        var r = Parse(j, DateTime.UtcNow);
+                        if (r != null && r.Ok) return r;
+                    }
+                }
+            }
+            catch { }
+
+            // [방식 2] agy -p /usage --output-format json 직접 호출 (폴백)
+            try
+            {
+                var cli = FetchFromCli();
+                if (cli != null && cli.Ok) return cli;
+            }
+            catch { }
+
+            return null;
         }
 
         // ---------- agy 설정에 상태줄 연결 ----------
