@@ -18,6 +18,7 @@ namespace UsageQuest
         public List<Meter> Meters = new List<Meter>();
         public string Email;
         public DateTime FetchedAt;
+        public string Source = "ide";  // ide = Antigravity 앱, cli = agy 상태줄
     }
 
     // Google Antigravity 사용량 읽기
@@ -211,7 +212,18 @@ namespace UsageQuest
 
         static AgResult Done(AgResult r)
         {
-            D("결과: " + (r.Ok ? "성공" : r.Code + " " + r.Message));
+            // Antigravity 앱(IDE)에서 못 읽으면 CLI(agy) 상태줄이 저장해 둔 값을 쓴다
+            if (!r.Ok)
+            {
+                var cli = AgyCli.ReadSaved();
+                bool connected = AgyCli.IsConnected();
+                D("CLI(agy) 연결=" + connected + ", 저장된 값=" + (cli == null ? "없음" : (cli.Ok ? cli.Meters.Count + "개, " + cli.FetchedAt.ToLocalTime().ToString("s") : cli.Message)));
+                if (cli != null && cli.Ok) r = cli;
+                else if (r.Code == "NOT_RUNNING")
+                    r.Message = connected ? "Antigravity 앱이 꺼져 있고, agy(CLI)에서 아직 받은 값이 없음 — agy를 실행하면 표시"
+                                          : "Antigravity 앱이 꺼져 있음 — CLI(agy)를 쓰면 트레이 메뉴에서 연결";
+            }
+            D("결과: " + (r.Ok ? "성공 (" + r.Source + ")" : r.Code + " " + r.Message));
             LastDiag = diag.ToString();
             return r;
         }

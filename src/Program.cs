@@ -8,8 +8,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Usage Quest")]
 [assembly: AssemblyProduct("Usage Quest")]
 [assembly: AssemblyDescription("Claude Code /usage 사용량을 게임 화면처럼 보여주는 위젯")]
-[assembly: AssemblyVersion("2.3.1.0")]
-[assembly: AssemblyFileVersion("2.3.1.0")]
+[assembly: AssemblyVersion("2.4.0.0")]
+[assembly: AssemblyFileVersion("2.4.0.0")]
 
 namespace UsageQuest
 {
@@ -28,6 +28,9 @@ namespace UsageQuest
         [STAThread]
         static void Main(string[] args)
         {
+            // agy(Antigravity CLI) 상태줄에서 호출될 때: 창 없이 값만 저장하고 바로 끝
+            if (args.Contains("--agy-statusline")) { AgyCli.RunStatusline(); return; }
+
             string demo = null;
             var d = args.FirstOrDefault(a => a.StartsWith("--demo"));
             if (d != null) demo = d.Contains("=") ? d.Split('=')[1] : "fresh";

@@ -392,7 +392,14 @@ namespace UsageQuest
             float x0 = p.X + pad, x1 = p.Right - pad, y = p.Y + S(10);
             var hf = Px.F("ps", S(7));
             Px.TextShadow(g, "ANTIGRAVITY", hf, AgTeal, AgTealDk, x0, y, Math.Max(1, S(1)));
-            if (ag.Ok && ag.Email != null) Px.TextR(g, Clip(g, ag.Email, Px.F("g9", S(10)), (x1 - x0) * 0.6f), Px.F("g9", S(10)), Px.InkFaint, x1, y - S(1));
+            string right = null;
+            if (ag.Ok && ag.Source == "cli")
+            {
+                var mins = (int)(DateTime.UtcNow - ag.FetchedAt).TotalMinutes;
+                right = "agy · " + (mins < 1 ? "방금" : mins < 60 ? mins + "분 전" : mins < 1440 ? (mins / 60) + "시간 전" : (mins / 1440) + "일 전");
+            }
+            else if (ag.Ok) right = ag.Email;
+            if (right != null) Px.TextR(g, Clip(g, right, Px.F("g9", S(10)), (x1 - x0) * 0.6f), Px.F("g9", S(10)), Px.InkFaint, x1, y - S(1));
             y += S(12 + 8);
             if (!ag.Ok)
             {
