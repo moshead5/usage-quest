@@ -1,10 +1,13 @@
-# 태그(vX.Y.Z)를 올리면 설치파일을 빌드해서 GitHub Releases에 올린다.
+# main에 올라간 버전(installer.nsi 의 VERSION)이 아직 릴리스되지 않았으면
+# 설치파일을 빌드해서 GitHub Releases에 vX.Y.Z 로 올린다.
 # 앱의 "업데이트 확인"은 여기 올라간 최신 릴리스를 보고 업데이트한다.
 name: release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['src/**', 'installer.nsi', 'fonts/**', 'notes/**', 'build.sh', '.github/workflows/release.yml']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,31 +18,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read version
+        id: v
+        run: |
+          VER=$(sed -n 's/^!define VERSION "\(.*\)"/\1/p' installer.nsi)
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          grep -q "AssemblyVersion(\"${VER}.0\")" src/Program.cs || { echo "src/Program.cs version != $VER"; exit 1; }
+          if gh release view "v$VER" >/dev/null 2>&1; then echo "exists=1" >> "$GITHUB_OUTPUT"; else echo "exists=0" >> "$GITHUB_OUTPUT"; fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Install Mono and NSIS
+        if: steps.v.outputs.exists == '0'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq mono-mcs mono-devel nsis
 
-      - name: Check version matches tag
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          grep -q "AssemblyVersion(\"${TAG}.0\")" src/Program.cs || { echo "src/Program.cs version != $TAG"; exit 1; }
-          grep -q "!define VERSION \"${TAG}\"" installer.nsi || { echo "installer.nsi version != $TAG"; exit 1; }
-
       - name: Build
+        if: steps.v.outputs.exists == '0'
         run: |
           chmod +x build.sh
           ./build.sh
           makensis -V2 installer.nsi
 
       - name: Create release
+        if: steps.v.outputs.exists == '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          FILE="out/UsageQuest-Setup-${TAG#v}.exe"
+          VER="${{ steps.v.outputs.ver }}"
+          FILE="out/UsageQuest-Setup-${VER}.exe"
           SHA=$(sha256sum "$FILE" | cut -d' ' -f1)
-          NOTES_FILE=release-notes.md
-          if [ -f "notes/${TAG}.md" ]; then cp "notes/${TAG}.md" "$NOTES_FILE"; else echo "Usage Quest ${TAG#v}" > "$NOTES_FILE"; fi
-          printf '\n\nsha256: %s\n' "$SHA" >> "$NOTES_FILE"
-          gh release create "$TAG" "$FILE" --title "Usage Quest ${TAG#v}" --notes-file "$NOTES_FILE"
+          if [ -f "notes/v${VER}.md" ]; then cp "notes/v${VER}.md" notes.md; else echo "Usage Quest ${VER}" > notes.md; fi
+          printf '\n\nsha256: %s\n' "$SHA" >> notes.md
+          gh release create "v${VER}" "$FILE" --target "$GITHUB_SHA" --title "Usage Quest ${VER}" --notes-file notes.md
