@@ -1,4 +1,4 @@
-﻿; Usage Quest 설치 프로그램 (사용자 계정에만 설치, 관리자 권한 불필요)
+; Usage Quest 설치 프로그램 (사용자 계정에만 설치, 관리자 권한 불필요)
 Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -6,7 +6,7 @@ Unicode true
 
 !define APPNAME "Usage Quest"
 !define APPKEY "UsageQuest"
-!define VERSION "2.5.2"
+!define VERSION "2.5.3"
 !define EXE "UsageQuest.exe"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPKEY}"
 
@@ -17,7 +17,7 @@ InstallDirRegKey HKCU "${UNINSTKEY}" "InstallLocation"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 BrandingText "${APPNAME} ${VERSION}"
-VIProductVersion "2.5.2.0"
+VIProductVersion "2.5.3.0"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"

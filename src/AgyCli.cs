@@ -114,8 +114,10 @@ namespace UsageQuest
 
         // ---------- 방식 2: agy -p /usage --output-format json 직접 호출 ----------
 
+        static AgResult cachedCliResult;
+
         // agy CLI를 비대화형으로 실행하여 쿼타 JSON 데이터를 조회합니다.
-        // agy 1.1.11+ 의 --output-format json 옵션을 사용합니다.
+        // conhost 창 깜빡임을 방지하기 위해 Native.RunComHidden 을 사용합니다.
         public static AgResult FetchFromCli(int timeoutMs = 15000)
         {
             string agyPath = FindAgy();
@@ -123,26 +125,8 @@ namespace UsageQuest
                 return new AgResult { Ok = false, Code = "NOT_RUNNING", Message = "agy(Antigravity CLI)를 찾을 수 없음" };
             try
             {
-                var psi = new ProcessStartInfo(agyPath, "-p /usage --output-format json")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    WorkingDirectory = Path.GetTempPath(),
-                };
                 string stdout;
-                int exitCode;
-                using (var proc = Process.Start(psi))
-                {
-                    try { proc.StandardInput.Close(); } catch { }
-                    stdout = proc.StandardOutput.ReadToEnd();
-                    proc.WaitForExit(timeoutMs);
-                    exitCode = proc.ExitCode;
-                }
+                int exitCode = Native.RunComHidden(agyPath, "-p /usage --output-format json", out stdout, timeoutMs);
                 if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
                     return new AgResult { Ok = false, Code = "ERROR", Message = "agy /usage 응답 없음 (exitCode=" + exitCode + ")" };
 
@@ -150,7 +134,12 @@ namespace UsageQuest
                 if (data == null)
                     return new AgResult { Ok = false, Code = "ERROR", Message = "agy /usage JSON 파싱 실패" };
 
-                return ParseFromCliJson(data);
+                var r = ParseFromCliJson(data);
+                if (r != null && r.Ok)
+                {
+                    cachedCliResult = r;
+                }
+                return r;
             }
             catch (Exception e)
             {
@@ -272,6 +261,12 @@ namespace UsageQuest
                 }
             }
             catch { }
+
+            // [캐시] 최근 2분 30초 이내에 성공한 CLI 호출 결과가 있으면 재사용 (불필요한 반복 실행 방지)
+            if (cachedCliResult != null && (DateTime.UtcNow - cachedCliResult.FetchedAt).TotalSeconds < 150)
+            {
+                return cachedCliResult;
+            }
 
             // [방식 2] agy -p /usage --output-format json 직접 호출 (폴백)
             try

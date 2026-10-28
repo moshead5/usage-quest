@@ -1,6 +1,10 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
+using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace UsageQuest
 {
@@ -69,6 +73,85 @@ namespace UsageQuest
             RECT r;
             try { if (h != IntPtr.Zero && GetWindowRect(h, out r)) return Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom); } catch { }
             return null;
+        }
+
+        // 백그라운드 완전 숨김 실행 (WScript.Shell 활용 - 0 = SW_HIDE)
+        // conhost.exe 창 깜빡임 및 콘솔 팝업을 100% 원천 차단
+        public static int RunComHidden(string exePath, string arguments, out string output, int timeoutMs = 15000)
+        {
+            output = "";
+            if (IsWindows)
+            {
+                string tmpFile = Path.Combine(Path.GetTempPath(), "uq_" + Guid.NewGuid().ToString("N") + ".tmp");
+                try
+                {
+                    Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                    if (shellType != null)
+                    {
+                        object shell = Activator.CreateInstance(shellType);
+                        string cmd = "cmd.exe /d /c \"\"" + exePath + "\" " + arguments + " > \"" + tmpFile + "\" 2>&1\"";
+                        int exitCode = -1;
+                        bool finished = false;
+                        var thread = new System.Threading.Thread(() =>
+                        {
+                            try
+                            {
+                                exitCode = (int)shellType.InvokeMember("Run", BindingFlags.InvokeMethod, null, shell, new object[] { cmd, 0, true });
+                                finished = true;
+                            }
+                            catch { }
+                        });
+                        thread.IsBackground = true;
+                        thread.Start();
+                        if (thread.Join(timeoutMs) && finished)
+                        {
+                            if (File.Exists(tmpFile))
+                            {
+                                output = File.ReadAllText(tmpFile, Encoding.UTF8);
+                            }
+                            return exitCode;
+                        }
+                        else
+                        {
+                            try { thread.Abort(); } catch { }
+                            return -2;
+                        }
+                    }
+                }
+                catch { return -1; }
+                finally
+                {
+                    try { if (File.Exists(tmpFile)) File.Delete(tmpFile); } catch { }
+                }
+            }
+
+            // 비Windows 또는 WScript 불가 시 ProcessStartInfo 폴백
+            try
+            {
+                var psi = new ProcessStartInfo(exePath, arguments)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    WorkingDirectory = Path.GetTempPath(),
+                };
+                using (var proc = Process.Start(psi))
+                {
+                    try { proc.StandardInput.Close(); } catch { }
+                    output = proc.StandardOutput.ReadToEnd();
+                    if (!proc.WaitForExit(timeoutMs))
+                    {
+                        try { proc.Kill(); } catch { }
+                        return -2;
+                    }
+                    return proc.ExitCode;
+                }
+            }
+            catch { return -1; }
         }
     }
 }
