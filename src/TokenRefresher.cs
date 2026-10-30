@@ -55,8 +55,39 @@ namespace UsageQuest
 
         static int RunHidden(string[] cand, string args, int timeoutMs, out string output)
         {
-            string fullArgs = cand[1] == "" ? args : cand[1] + args + "\"";
-            return Native.RunComHidden(cand[0], fullArgs, out output, timeoutMs);
+            output = "";
+            var sb = new System.Text.StringBuilder();
+            var psi = new ProcessStartInfo();
+            psi.FileName = cand[0];
+            psi.Arguments = cand[1] == "" ? args : cand[1] + args + "\"";
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            psi.RedirectStandardInput = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            psi.WorkingDirectory = WorkDir();
+            try
+            {
+                using (var p = Process.Start(psi))
+                {
+                    p.StandardInput.Close();
+                    p.OutputDataReceived += (a, e) => { if (e.Data != null) lock (sb) sb.AppendLine(e.Data); };
+                    p.ErrorDataReceived += (a, e) => { };
+                    p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
+                    if (!p.WaitForExit(timeoutMs))
+                    {
+                        try { Process.Start(new ProcessStartInfo("taskkill", "/F /T /PID " + p.Id) { CreateNoWindow = true, UseShellExecute = false }); } catch { }
+                        try { p.Kill(); } catch { }
+                        return -2;
+                    }
+                    p.WaitForExit();
+                    lock (sb) output = sb.ToString();
+                    return p.ExitCode;
+                }
+            }
+            catch { return -1; }
         }
 
         static bool Renewed(string customPath, string oldToken)

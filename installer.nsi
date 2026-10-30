@@ -6,7 +6,7 @@ Unicode true
 
 !define APPNAME "Usage Quest"
 !define APPKEY "UsageQuest"
-!define VERSION "2.5.3"
+!define VERSION "2.2.0"
 !define EXE "UsageQuest.exe"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPKEY}"
 
@@ -17,7 +17,7 @@ InstallDirRegKey HKCU "${UNINSTKEY}" "InstallLocation"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 BrandingText "${APPNAME} ${VERSION}"
-VIProductVersion "2.5.3.0"
+VIProductVersion "2.2.0.0"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"

@@ -7,6 +7,6 @@ RES=""
 for f in fonts/*.ttf; do RES="$RES -resource:$f,$(basename $f)"; done
 mcs -sdk:4.5 -target:winexe -optimize+ -platform:anycpu -langversion:7 -codepage:utf8 \
   -win32icon:app.ico -out:out/UsageQuest.exe \
-  -r:System.dll -r:System.Core.dll -r:System.Drawing.dll -r:System.Windows.Forms.dll -r:System.Web.Extensions.dll -r:System.Management.dll \
+  -r:System.dll -r:System.Core.dll -r:System.Drawing.dll -r:System.Windows.Forms.dll -r:System.Web.Extensions.dll \
   $RES src/*.cs
 ls -la out/UsageQuest.exe

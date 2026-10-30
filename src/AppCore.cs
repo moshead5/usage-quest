@@ -20,10 +20,6 @@ namespace UsageQuest
         public bool Quitting { get; private set; }
 
         public UsageResult Last;        // 마지막 성공
-        public AgResult Ag;             // Antigravity 사용량 (없으면 null)
-        public bool AgEnabled { get { return Settings.GetBool("showAg", true); } }
-        // 켜져 있으면 항상 표시 (Antigravity가 꺼져 있거나 실패하면 그 이유를 한 줄로 보여줌)
-        public bool AgVisible { get { return AgEnabled && Ag != null; } }
         public UsageResult Error;       // 현재 오류 (없으면 null)
         public UsageResult Shown { get { return Error != null && Last == null ? Error : (Last ?? Error); } }
         public Mood Mood;
@@ -110,13 +106,7 @@ namespace UsageQuest
                 UsageResult r;
                 try { r = DemoMode ? UsageClient.Demo(DemoVariant) : UsageClient.Fetch(path); }
                 catch (Exception e) { r = UsageResult.Fail("NETWORK", e.Message); }
-                AgResult ag = null;
-                if (AgEnabled)
-                {
-                    try { ag = DemoMode ? AntigravityClient.Demo() : AntigravityClient.Fetch(); }
-                    catch (Exception e) { ag = new AgResult { Ok = false, Code = "ERROR", Message = e.Message }; }
-                }
-                try { ui.BeginInvoke((Action)(() => { OnAg(ag); OnResult(r); })); } catch { }
+                try { ui.BeginInvoke((Action)(() => { OnResult(r); })); } catch { }
             });
         }
 
@@ -302,32 +292,6 @@ namespace UsageQuest
             Changed();
         }
 
-        void OnAg(AgResult ag)
-        {
-            Ag = ag;
-            if (ag != null && ag.Ok && !DemoMode && !Settings.GetBool("agSeen", false)) Settings.SetBool("agSeen", true);
-        }
-
-        void ToggleAgyCli()
-        {
-            try
-            {
-                if (AgyCli.IsConnected())
-                {
-                    AgyCli.Connect(false);
-                    Balloon("agy 연결 해제", "Antigravity CLI 상태줄 설정을 지웠습니다.");
-                    return;
-                }
-                string other = AgyCli.ExistingOtherCommand();
-                if (other != null &&
-                    MessageBox.Show("agy에 이미 다른 상태줄 명령이 설정되어 있습니다:\n\n" + other + "\n\nUsage Quest로 바꿀까요? (기존 설정 파일은 settings.json.usagequest.bak 으로 백업됩니다)",
-                        "Usage Quest", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-                AgyCli.Connect(true);
-                Balloon("agy 연결 완료", "agy(Antigravity CLI)를 다시 실행하면 사용량이 위젯에 표시됩니다.");
-            }
-            catch (Exception e) { Balloon("agy 연결 실패", e.Message); }
-        }
-
         void Schedule(int ms)
         {
             refreshTimer.Stop();
@@ -387,11 +351,6 @@ namespace UsageQuest
             menu.Items.Add(new ToolStripMenuItem("토큰 만료 시 자동 갱신", null, (a, b) => Settings.SetBool("autoRenew", !AutoRenew)) { Checked = AutoRenew });
             menu.Items.Add(new ToolStripMenuItem("위젯 위치 초기화 (오른쪽 위)", null, (a, b) => { widget.ResetPosition(); ShowWidget(); }));
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Antigravity 사용량 표시", null, (a, b) => { Settings.SetBool("showAg", !AgEnabled); if (!AgEnabled) Ag = null; Changed(); if (AgEnabled) { lastManual = DateTime.MinValue; Refresh(false); } }) { Checked = AgEnabled });
-            if (AgEnabled && Native.IsWindows)
-                menu.Items.Add(new ToolStripMenuItem("   ↳ Antigravity CLI(agy) 연결", null, (a, b) => ToggleAgyCli()) { Checked = AgyCli.IsConnected() });
-            if (AgEnabled)
-                menu.Items.Add(new ToolStripMenuItem("   ↳ Antigravity 진단 정보 복사", null, (a, b) => { try { Clipboard.SetText(AntigravityClient.LastDiag); Balloon("복사됨", "Antigravity 진단 정보를 클립보드에 복사했습니다. 대화창에 붙여넣어 주세요."); } catch { } }));
             menu.Items.Add(new ToolStripMenuItem("작업표시줄에 사용량 표시", null, (a, b) => SetStripEnabled(!StripEnabled)) { Checked = StripEnabled });
             if (StripEnabled && Native.IsWindows)
             {

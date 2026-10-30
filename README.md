@@ -23,16 +23,11 @@ Claude Code의 `/usage` 값(5시간 세션 · 주간 한도 · 리셋 시각)을
 - **자동 업데이트**: 앱이 켜지고 20초 뒤 한 번, 그리고 트레이 메뉴 "업데이트 확인"을 눌렀을 때 [GitHub Releases](https://github.com/moshead5/usage-quest/releases)에서 새 버전 확인 → 위젯 제목줄 `UP` 버튼 / 트레이 알림 / 트레이 메뉴 "업데이트 설치"로 바로 설치 (화면 없이 설치 후 자동 재실행)
   - 받은 파일은 크기와 SHA-256(릴리스 설명의 `sha256:` 줄)으로 검증
   - 트레이 메뉴 "업데이트 확인"으로 수동 확인, "시작할 때 업데이트 확인"으로 시작 시 확인 끄기
-- **Antigravity 사용량**: Google Antigravity가 켜져 있으면 모델 그룹별(Gemini / Claude·GPT) 5시간·주간 남은 양을 위젯 아래 칸에 표시
-  - **Antigravity 앱(IDE)**: 앱이 PC 안에서 띄우는 언어 서버(127.0.0.1)에 앱 화면과 같은 요청을 보내 읽음. Google 로그인 정보는 쓰지 않음
-  - **Antigravity CLI(agy)**: 트레이 메뉴 "Antigravity CLI(agy) 연결"을 한 번 누르면 `~/.gemini/antigravity-cli/settings.json`에 공식 상태줄(statusLine) 설정을 추가. agy가 상태가 바뀔 때마다 남은 사용량을 넘겨주고, 위젯은 마지막 값을 "agy · N분 전"과 함께 표시 (기존 설정은 `.usagequest.bak`으로 백업)
-  - Antigravity가 꺼져 있으면 "꺼져 있음"으로 표시, 트레이 메뉴 "Antigravity 사용량 표시"로 끄기
-  - 비공식 방식이라 Antigravity 업데이트로 바뀔 수 있음
 - 단축키: `R`/`F5` 다시 확인, `Esc` 숨기기
 - 첫 실행 시 "컴퓨터 시작 시 자동 실행" 켜짐 (트레이 메뉴에서 끄기)
 
 ## 설치
-`UsageQuest-Setup-2.4.0.exe` 실행. 관리자 권한 필요 없음.
+`UsageQuest-Setup-2.2.0.exe` 실행. 관리자 권한 필요 없음.
 - 1.x(Electron) 버전이 깔려 있으면 설치 중에 자동으로 지우고 자동 실행 항목도 정리함
 - 서명이 없어서 "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**
 - 설치 위치: `%LOCALAPPDATA%\Programs\UsageQuest`, 설정: `%APPDATA%\UsageQuest\settings.json`
@@ -55,6 +50,5 @@ Claude Code의 `/usage` 값(5시간 세션 · 주간 한도 · 리셋 시각)을
 
 ## 새 버전 배포 (개발자용)
 1. `src/Program.cs`의 `AssemblyVersion`, `installer.nsi`의 `VERSION` 올리기
-2. (선택) `notes/vX.Y.Z.md`에 바뀐 점 적기
-3. main에 커밋·push → 그 버전이 아직 릴리스되지 않았으면 GitHub Actions가 설치파일을 빌드해 Releases에 `vX.Y.Z`로 올림 (SHA-256 자동 기록)
-4. 앱에서 "업데이트 확인" → 새 버전 설치
+2. `./build.sh && makensis installer.nsi`
+3. GitHub Releases에 태그 `vX.Y.Z`로 릴리스 생성, `out/UsageQuest-Setup-X.Y.Z.exe` 첨부, 설명에 `sha256: <해시>` 한 줄 추가 (`sha256sum` 결과)

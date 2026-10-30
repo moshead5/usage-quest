@@ -73,7 +73,7 @@ namespace UsageQuest
         // ---------- 크기·위치 ----------
         public void ApplySize(bool initial)
         {
-            Size sz = compact ? new Size(S(CW), S(CompactHeight() + AgExtra())) : new Size(S(FW), S(FH + AgExtra()));
+            Size sz = compact ? new Size(S(CW), S(CompactHeight())) : new Size(S(FW), S(FH));
             if (initial)
             {
                 var wa = Screen.PrimaryScreen.WorkingArea;
@@ -336,8 +336,7 @@ namespace UsageQuest
         {
             float top = DrawTitlebar(g, 32);
             float W = ClientSize.Width;
-            var panel = new RectangleF(S(8) + px * 2, top + S(8) + px * 2, W - (S(8) + px * 2) * 2, ClientSize.Height - top - S(8) - px * 4 - S(10) - S(AgExtra()));
-            PaintAgBelow(g, panel, S(10));
+            var panel = new RectangleF(S(8) + px * 2, top + S(8) + px * 2, W - (S(8) + px * 2) * 2, ClientSize.Height - top - S(8) - px * 4 - S(10));
             Px.PanelBox(g, panel, px, Px.Panel);
             float x0 = panel.X + S(10), x1 = panel.Right - S(10), y = panel.Y + S(10);
 
@@ -369,68 +368,6 @@ namespace UsageQuest
             y += S(2 + 7);
             Px.Text(g, AccountText(r) + (core.Error != null ? "  · 최근 확인 실패" : ""), Px.F("g9", S(10)), Px.InkFaint, x0, y);
         }
-
-        // ===================== Antigravity 칸 =====================
-        int AgRows() { var a = core.Ag; return a != null && a.Ok ? Math.Max(1, a.Meters.Count) : 0; }
-
-        // Antigravity 패널이 차지하는 높이(DIP, 위 간격·테두리 포함). 안 보이면 0
-        int AgExtra()
-        {
-            if (!core.AgVisible) return 0;
-            int rows = AgRows();
-            float inner = 10 + 12 + 8 + (rows > 0 ? rows * 28 + (rows - 1) * 9 : 14) + 8;
-            return (int)Math.Ceiling(8 + 12 + inner);
-        }
-
-        void PaintAgBelow(Graphics g, RectangleF above, float pad)
-        {
-            if (!core.AgVisible) return;
-            var ag = core.Ag;
-            float top = above.Bottom + px * 2 + S(8) + px * 2;
-            var p = new RectangleF(above.X, top, above.Width, S(AgExtra()) - S(8) - px * 4);
-            Px.PanelBox(g, p, px, Px.Panel);
-            float x0 = p.X + pad, x1 = p.Right - pad, y = p.Y + S(10);
-            var hf = Px.F("ps", S(7));
-            Px.TextShadow(g, "ANTIGRAVITY", hf, AgTeal, AgTealDk, x0, y, Math.Max(1, S(1)));
-            string right = null;
-            if (ag.Ok && ag.Source == "cli")
-            {
-                var mins = (int)(DateTime.UtcNow - ag.FetchedAt).TotalMinutes;
-                right = "agy · " + (mins < 1 ? "방금" : mins < 60 ? mins + "분 전" : mins < 1440 ? (mins / 60) + "시간 전" : (mins / 1440) + "일 전");
-            }
-            else if (ag.Ok) right = ag.Email;
-            if (right != null) Px.TextR(g, Clip(g, right, Px.F("g9", S(10)), (x1 - x0) * 0.6f), Px.F("g9", S(10)), Px.InkFaint, x1, y - S(1));
-            y += S(12 + 8);
-            if (!ag.Ok)
-            {
-                string msg = ag.Code == "NOT_RUNNING" ? "Antigravity가 꺼져 있음 — 켜면 표시됩니다" : "확인 실패: " + ag.Message;
-                Px.Text(g, Clip(g, msg, Px.F("g9", S(10)), x1 - x0), Px.F("g9", S(10)), ag.Code == "NOT_RUNNING" ? Px.InkFaint : Px.Warn, x0, y);
-                AddHit(new RectangleF(x0, y, x1 - x0, S(14)), null, msg + "\n(트레이 메뉴 → Antigravity 진단 정보 복사)", false);
-                return;
-            }
-            var chipF = Px.F("ps", S(7));
-            var pctF = Px.F("ps", S(9));
-            var cdF = Px.F("g9", S(10));
-            foreach (var m in ag.Meters)
-            {
-                Color c = m.Chip == "GEM" ? AgTeal : m.Chip == "3P" ? AgPink : Px.Accent;
-                Color cd = m.Chip == "GEM" ? AgTealDk : m.Chip == "3P" ? AgPinkDk : Px.AccentDk;
-                Color bc, bcd;
-                Px.LevelColors(m.Remaining, c, cd, out bc, out bcd);
-                Px.Chip(g, m.Chip, chipF, c, cd, new RectangleF(x0, y, S(42), S(14)), S(2));
-                float bx = x0 + S(50), bw = x1 - S(46) - bx;
-                float bh = S(12);
-                Px.SegBar(g, new RectangleF(bx, y + (S(14) - bh) / 2f, bw, bh), m.Remaining, bc, bcd, 20, s * 0.5f, m.Remaining < 25, blink);
-                Px.TextR(g, (int)Math.Round(m.Used) + "%", pctF, Px.Ink, x1, Px.MidY(pctF, y, S(14)));
-                string win = m.Title.Contains(" · ") ? m.Title.Substring(m.Title.LastIndexOf(" · ") + 3) : "";
-                string cdText = (win != "" ? win + " · " : "") + (m.ResetsAt.HasValue ? Fmt.Left(m.ResetsAt) : "");
-                Px.Text(g, Clip(g, cdText, cdF, x1 - bx), cdF, Px.InkFaint, bx, y + S(16));
-                AddHit(new RectangleF(x0, y, x1 - x0, S(28)), null, "Antigravity · " + m.Title + " · " + (int)Math.Round(m.Used) + "% 사용" + (m.ResetsAt.HasValue ? " · " + Fmt.ResetAt(m.ResetsAt) + " 리셋" : ""), false);
-                y += S(28 + 9);
-            }
-        }
-
-        static readonly Color AgTeal = Px.C("#4fd1c5"), AgTealDk = Px.C("#23877d"), AgPink = Px.C("#f28bb4"), AgPinkDk = Px.C("#a8467a");
 
         static string AccountText(UsageResult r)
         {
@@ -581,8 +518,7 @@ namespace UsageQuest
             // 하단(대화창, 버튼) 먼저 위치 계산
             float footerH = S(62);
             var dialog = new RectangleF(m, H - footerH - S(70) - px * 2, W - m * 2, S(64));
-            var stats = new RectangleF(m, hero.Bottom + px * 2 + S(12) + px * 2, W - m * 2, dialog.Y - px * 4 - S(12) - S(AgExtra()) - (hero.Bottom + px * 2 + S(12) + px * 2));
-            PaintAgBelow(g, stats, S(14));
+            var stats = new RectangleF(m, hero.Bottom + px * 2 + S(12) + px * 2, W - m * 2, dialog.Y - px * 4 - S(12) - (hero.Bottom + px * 2 + S(12) + px * 2));
             Px.PanelBox(g, stats, px, Px.Panel);
             if (r == null || (!r.Ok && core.Error == null)) Loading(g, stats);
             else if (core.Error != null && (core.Last == null || core.Error.Code != "RATE_LIMIT" && core.Error.Code != "NETWORK")) PaintError(g, stats, false);
